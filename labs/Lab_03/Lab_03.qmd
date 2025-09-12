@@ -1,0 +1,157 @@
+---
+title: "Lab_3_OLEA"
+author: "Julian Olea"
+format: 
+  html:
+    embed-resources: true
+fig-width: 8
+fig-height: 6
+warning: FALSE
+---
+
+```{r}
+
+setwd("~/Masters/PM_566/labs/Lab_03")
+
+```
+
+
+```{r Packages Used}
+
+# library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(rstatix)
+library(ggpubr)
+library(leaflet)
+library(lubridate)
+
+```
+
+#1: Read the data
+
+```{r}
+
+# met <- read_csv("met_all.gz")
+
+met <- read.table("met_all.gz", header = TRUE, sep = ",")
+
+```
+
+#2: Check the dimensions, headers, footers
+```{r}
+
+dim(met)
+head(met)
+tail(met)
+
+```
+There are 2377343 and 30 columns
+
+#4:Take a closer look at the key variables.
+```{r}
+
+table(met$year)
+table(met$day)
+table(met$hour)
+summary(met$temp)
+summary(met$elev)
+summary(met$wind.sp)
+
+```
+
+```{r}
+
+# met[met$elev == 9999.0 , ] <- NA
+
+met %>% filter(!elev == 9999.0) -> met_filtered
+
+summary(met_filtered$elev)
+
+```
+After subsetting the data to exclude the sites at the 9999 meter elevation, the new max site elevation is 4113 meters.
+
+```{r}
+
+met_filtered %>% filter(temp > -40) %>% select(temp) %>% summary()
+
+```
+The minimum temperature reported is -17.20 celsius, we will check if this makes sense.
+
+#5: Check the data against an external data source.
+
+```{r}
+
+met_filtered %>% arrange(temp) %>% select(temp, lat, lon, elev) %>% distinct()
+
+met_filtered %>% filter(temp > -15) %>% select(temp, elev) %>% summary()
+
+met_filtered %>% filter(temp > -15) -> met_filtered
+
+```
+After checking expected temperature range at 29.117, -89.550, it seems that -17.20 celsius is highly unlikely in the southeast coast at this time of year, so we excluded it and anything else below -15 celsius. The new minimum temperature reported is -3 celsius.
+
+# 6: Calculate summary statistics
+
+```{r}
+
+met_filtered %>% arrange(desc(elev))
+
+# met_filtered %>% filter(elev == 4113.0) -> met_max_elev
+
+met_filtered %>%
+  filter(elev == 4113.0) %>%
+  summarise(temp_windsp = cor(temp, wind.sp, use = "complete"),
+            temp_day = cor(temp, day, use = "complete"),
+            temp_hour = cor(temp, hour, use = "complete"),
+            windsp_day = cor(wind.sp, day, use = "complete"),
+            windsp_hour = cor(wind.sp, hour, use = "complete")
+  )
+
+```
+
+#7: Exploratory graphs
+
+```{r}
+
+met_filtered %>%
+  select(elev, temp, wind.sp) %>%
+  pivot_longer(cols = everything(), names_to = "var", values_to = "val") %>%
+  ggplot(aes(x = val)) +
+  geom_histogram(fill = "steelblue", color = "white") +
+  facet_wrap(~ var, scales = "free", ncol = 1) +
+  theme_minimal()
+
+```
+
+```{r}
+met_filtered %>%
+  filter(elev == 4113.0) %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>% 
+  addCircles(lat =~ lat, lng =~ lon, opacity = 1, fillOpacity = 1, radius = 100)
+```
+
+```{r}
+
+met_filtered %>%
+  filter(elev == 4113.0) %>%
+  mutate(date = ymd_h(paste(year, month, day, hour, sep = " "))) %>%
+  relocate(date, .after = min) %>%
+  arrange(date) %>%
+  select(date, temp, wind.sp) %>%
+  pivot_longer(cols = c(temp, wind.sp), names_to = "var", values_to = "val") %>%
+  ggplot(aes(x = date, y = val)) +
+  geom_line() +
+  facet_wrap(~var, scales = "free", ncol = 1) +
+  theme_minimal()
+
+```
+
+#8: Ask questions
+
+```{r}
+
+```
+
