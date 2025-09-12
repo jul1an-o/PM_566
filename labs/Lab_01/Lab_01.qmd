@@ -1,0 +1,148 @@
+---
+title: "Lab_1_OLEA"
+author: "Julian Olea"
+format: 
+  html:
+    embed-resources: true
+fig-width: 8
+fig-height: 6
+warning: FALSE
+---
+
+```{r Load the packages, output = FALSE}
+# install.packages("datasauRus")
+library(datasauRus)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+```
+
+
+# Question 1:
+
+The help file shows that here are 1846 rows and 3 columns.
+We can also see the same information by using dim() as shown below.
+
+```{r}
+
+dim(datasaurus_dozen)
+
+```
+
+The included variables are shown below and identified by using the unique() function
+
+```{r}
+
+unique(datasaurus_dozen$dataset)
+
+```
+
+# Question 2
+
+```{r}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "dino") %>%
+  {cor(.$x, .$y)}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "dino") %>%
+  
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  stat_cor(
+    method = "pearson",
+    label.x.npc = "left",
+    label.y.npc = "top",
+    parse = FALSE,
+    label.sep = "\n",
+    size = 4
+  )
+
+```
+
+# Question 3
+
+```{r}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "star") %>%
+  {cor(.$x, .$y)}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "star") %>%
+
+ggplot(aes(x = x, y = y)) +
+  geom_point() +
+   stat_cor(
+      method = "pearson",
+      label.x.npc = "left",
+      label.y.npc = "top",
+      parse = FALSE,
+      label.sep = "\n",
+      size = 4
+    )
+
+
+```
+
+The r value of star is almost identical to that of dino. R of star = -0.063 R of dino = -0.064
+
+
+# Question 4
+
+```{r}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "circle") %>%
+  {cor(.$x, .$y)}
+
+datasaurus_dozen %>%
+  filter(dataset %in% "circle") %>%
+
+ggplot(aes(x = x, y = y)) +
+  geom_point() +
+   stat_cor(
+      method = "pearson",
+      label.x.npc = "left",
+      label.y.npc = "top",
+      parse = FALSE,
+      label.sep = "\n",
+      size = 4
+    )
+
+
+```
+
+The r value of circle is slightly less than dino. R of circle = -0.068 R of dino = -0.064
+
+# Question 5
+
+```{r, fig.width = 16, fig.height = 12}
+
+ggplot(datasaurus_dozen, aes(x = x, y = y)) +
+  geom_point(aes(color = dataset)) +
+   stat_cor(
+      method = "pearson",
+      label.x.npc = "left",
+      label.y.npc = "top",
+      parse = FALSE,
+      label.sep = "\n",
+      size = 4
+    ) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "") +
+  facet_wrap(~dataset)
+
+```
+
+# Question 6
+
+```{r}
+
+datasaurus_dozen %>%
+  group_by(dataset) %>%
+  summarize(r = cor(x, y))
+
+```
+
