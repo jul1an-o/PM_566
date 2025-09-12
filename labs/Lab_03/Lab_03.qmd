@@ -43,8 +43,8 @@ met <- read.table("met_all.gz", header = TRUE, sep = ",")
 ```{r}
 
 dim(met)
-head(met)
-tail(met)
+head(met, 3)
+tail(met, 3)
 
 ```
 There are 2377343 and 30 columns
@@ -83,7 +83,7 @@ The minimum temperature reported is -17.20 celsius, we will check if this makes 
 
 ```{r}
 
-met_filtered %>% arrange(temp) %>% select(temp, lat, lon, elev) %>% distinct()
+met_filtered %>% arrange(temp) %>% select(temp, lat, lon, elev) %>% distinct() %>% head(3)
 
 met_filtered %>% filter(temp > -15) %>% select(temp, elev) %>% summary()
 
@@ -96,7 +96,7 @@ After checking expected temperature range at 29.117, -89.550, it seems that -17.
 
 ```{r}
 
-met_filtered %>% arrange(desc(elev))
+met_filtered %>% arrange(desc(elev)) %>% head(3)
 
 # met_filtered %>% filter(elev == 4113.0) -> met_max_elev
 
