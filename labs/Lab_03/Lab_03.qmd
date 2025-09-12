@@ -180,30 +180,51 @@ After grouping all the data by time of day (hour) and taking the average of temp
 Let's see how well they correlate.
 ```{r}
 
-ggplot(plot_df, aes(x = .data[[pdl1_col]], y = .data[[abundance_col]])) +
-      geom_point(size = 3, alpha = 0.8) +
-      geom_smooth(method = "lm", se = TRUE, color = "steelblue", linewidth = 1) +
-      ggpubr::stat_cor(
-        method = cor_method,
-        label.x.npc = "left",
-        label.y.npc = "top",
-        parse = FALSE,
-        label.sep = "\n",
-        size = plotstatstextsize
-      ) +
-      labs(
-        x = x_lab,
-        y = y_lab,
-        title = paste("Correlation between", x_descriptor, "and", y_descriptor),
-        subtitle = paste("Phenotype:", phenotype)
-      ) +
-      theme_minimal(base_size = plottextsize) +
-      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-            panel.background = element_blank(), axis.line = element_line(colour = "black"))
-
-
-
-ggplot()
+met_filtered %>%
+  select(hour, temp, wind.sp) %>%
+  group_by(hour) %>%
+  summarise(
+    mean_temp = mean(temp, na.rm = TRUE),
+    mean_wind = mean(wind.sp, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = mean_temp, y = mean_wind)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "steelblue", linewidth = 1) +
+  ggpubr::stat_cor(
+    method = "pearson",
+    label.x.npc = "left",
+    label.y.npc = "top",
+    parse = FALSE,
+    label.sep = "\n",
+    size = 4
+  ) +
+  labs(
+    x = "Hourly mean temperature",
+    y = "Hourly mean wind speed",
+    title = "Correlation between hourly mean temperature and wind speed"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black")
+  )
 
 ```
 
+The correlation seems *very* strong. Let's manually examine the data to make sure that makes sense. 
+
+```{r}
+met_filtered %>%
+  select(hour, temp, wind.sp) %>%
+  group_by(hour) %>%
+  summarise(
+    mean_temp = mean(temp, na.rm = TRUE),
+    mean_wind = mean(wind.sp, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+After looking at the mean temperature and mean wind globally by hour, the trend does seem to check out!
