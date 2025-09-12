@@ -29,7 +29,7 @@ library(lubridate)
 
 ```
 
-#1: Read the data
+# 1: Read the data
 
 ```{r}
 
@@ -39,7 +39,7 @@ met <- read.table("met_all.gz", header = TRUE, sep = ",")
 
 ```
 
-#2: Check the dimensions, headers, footers
+# 2: Check the dimensions, headers, footers
 ```{r}
 
 dim(met)
@@ -49,7 +49,7 @@ tail(met, 3)
 ```
 There are 2377343 and 30 columns
 
-#4:Take a closer look at the key variables.
+# 4:Take a closer look at the key variables.
 ```{r}
 
 table(met$year)
@@ -79,7 +79,7 @@ met_filtered %>% filter(temp > -40) %>% select(temp) %>% summary()
 ```
 The minimum temperature reported is -17.20 celsius, we will check if this makes sense.
 
-#5: Check the data against an external data source.
+# 5: Check the data against an external data source.
 
 ```{r}
 
@@ -111,7 +111,7 @@ met_filtered %>%
 
 ```
 
-#7: Exploratory graphs
+# 7: Exploratory graphs
 
 ```{r}
 
@@ -148,10 +148,62 @@ met_filtered %>%
   theme_minimal()
 
 ```
+Temperature seems to vary without consistency. Wind speed interestingly seems to ramp up later in the month. 
 
-#8: Ask questions
+# 8: Ask questions
 
+Let's check out the relationship between temperature and wind speed as the day advances.
 ```{r}
+
+met_filtered %>%
+  select(hour, wind.sp, temp) %>%
+  tidyr::pivot_longer(cols = -"hour",
+                      names_to = "measure",
+                      values_to = "value"
+  ) %>%
+  group_by(hour, measure) %>%
+  summarise(
+    mean   = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  select(hour, measure, mean) %>%
+  
+  ggplot(aes(x = hour, y = mean)) +
+  geom_line() +
+  facet_wrap(~measure, scales = "free", ncol = 1)
+
+
+```
+After grouping all the data by time of day (hour) and taking the average of temperature and wind speed, it seems that both wind speed and temperatrue follow the same trend over the course of 24 hours
+
+Let's see how well they correlate.
+```{r}
+
+ggplot(plot_df, aes(x = .data[[pdl1_col]], y = .data[[abundance_col]])) +
+      geom_point(size = 3, alpha = 0.8) +
+      geom_smooth(method = "lm", se = TRUE, color = "steelblue", linewidth = 1) +
+      ggpubr::stat_cor(
+        method = cor_method,
+        label.x.npc = "left",
+        label.y.npc = "top",
+        parse = FALSE,
+        label.sep = "\n",
+        size = plotstatstextsize
+      ) +
+      labs(
+        x = x_lab,
+        y = y_lab,
+        title = paste("Correlation between", x_descriptor, "and", y_descriptor),
+        subtitle = paste("Phenotype:", phenotype)
+      ) +
+      theme_minimal(base_size = plottextsize) +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+ggplot()
 
 ```
 
