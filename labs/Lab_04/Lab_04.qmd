@@ -209,12 +209,16 @@ colors <- colorFactor(
 
 
 met_filtered %>%
+  tidyr::drop_na() %>%
   arrange(desc(mean_rh)) %>%
-  head(10) %>%
+  head(10) -> top10_rh
+
+met_filtered %>%
+  tidyr::drop_na() %>%
   leaflet() %>%
   addProviderTiles('OpenStreetMap') %>% 
   addCircles(lat =~ mean_lat, lng =~ mean_lon, opacity = 1, fillOpacity = 1, radius = 500, color = ~colors(factor(region))) %>%
-  addMarkers(~mean_lon, ~mean_lat, popup = ~as.character(mean_rh), label = ~as.character(mean_rh)) %>%
+  addMarkers(~top10_rh$mean_lon, ~top10_rh$mean_lat, popup = ~as.character(top10_rh$mean_rh), label = ~as.character(top10_rh$mean_rh)) %>%
   addLegend(
     "bottomright",
     pal = colors,
