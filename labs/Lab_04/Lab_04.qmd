@@ -1,0 +1,254 @@
+---
+title: "Lab_4_OLEA"
+author: "Julian Olea"
+format: 
+  html:
+    embed-resources: true
+fig-width: 8
+fig-height: 6
+warning: FALSE
+---
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(leaflet)
+
+```
+
+
+# 1: Read the data
+```{r}
+
+if (!file.exists("met_all.gz"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    destfile = "met_all.gz",
+    method   = "libcurl",
+    timeout  = 60
+    )
+met <- data.table::fread("met_all.gz")
+
+```
+
+# 2: Prepare the data
+```{r}
+
+data.table::week("2019-08-01 00:00:00")
+
+met %>%
+  filter(temp > -17 & elev != 9999) %>%
+  mutate(date = ymd_h(paste(year, month, day, hour, sep = " ")),
+         week   = data.table::week(date)) %>%
+  count(year, month, week) %>%
+  arrange(year, month, week)
+
+
+met %>%
+  filter(temp > -17
+         & elev != 9999.0) %>%
+  mutate(date = ymd_h(paste(year, month, day, hour, sep = " ")),
+         week = data.table::week(date)) %>%
+  group_by(year, month) %>%
+  filter(week == min(week)) %>%
+  ungroup() %>%
+  group_by(USAFID) %>%
+  summarise(mean_temp = mean(temp),
+            mean_rh = mean(rh),
+            mean_wind_sp = mean(`wind.sp`), 
+            mean_vis_dist = mean(`vis.dist`),
+            mean_dew_point = mean(`dew.point`),
+            mean_lat = mean(lat),
+            mean_lon = mean(lon),
+            mean_elev = mean(elev),
+            .groups = "drop"
+  ) %>%
+  mutate(region = case_when(
+    mean_lon > -98.00 & mean_lat > 39.71 ~ "NE",
+    mean_lon <= -98.00 & mean_lat > 39.71 ~ "NW",
+    mean_lon > -98.00 & mean_lat <= 39.71 ~ "SE",
+    mean_lon <= -98.00 & mean_lat <= 39.71 ~ "SW"
+  ),
+  visibility = case_when(
+    mean_vis_dist >= 0 & mean_vis_dist < 1000 ~ "fog",
+    mean_vis_dist >= 1000 & mean_vis_dist < 6000  ~ "mist",
+    mean_vis_dist >= 6000 & mean_vis_dist < 10000 ~ "haze",
+    mean_vis_dist >= 10000 ~ "clear"
+  ),
+  elevation_category = case_when(
+    mean_elev >= 252 ~ "high",
+    mean_elev <= 252 ~ "low"
+  )
+  ) -> met_filtered
+
+```
+
+# 3: Use geom_violin to examine the wind speed and dew point by region
+
+```{r}
+
+met_filtered %>%
+  select(mean_dew_point, mean_wind_sp, region) %>%
+  tidyr::pivot_longer(cols = c(mean_dew_point, mean_wind_sp), names_to = "var", values_to = "val") %>%
+  tidyr::drop_na() %>%
+  
+  ggplot(aes(x = 1, y = val)) + 
+  geom_violin() +
+  ggh4x::facet_grid2(
+    var ~ region,
+    scales = "free_y",
+    independent = "y",
+    axes = "y",
+    switch = "y",
+    labeller = labeller(
+      var = c(
+        mean_dew_point = "Dew Point (°C)",
+        mean_wind_sp   = "Wind Speed (m/s)"
+      )
+    )
+  ) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.y.left = element_text(angle = 90)) +
+  labs(x = "",
+       y = "",
+       title = "Dew Ponit and Wind Speed Faceted by Regions")
+
+```
+
+For the NE, SE, and SW regions, the dew point follows a unimodal distribution. Dew points for. NE and SW regions seem to be mostly distributed around the 15°C mark. For the SE region, the dew point seems to be mostly distributed around 21°C. The NW region interestingly has a bimodal distribution with the primary distribution being weighted aroun 9°C and the secondary distribution around 19 °C. 
+
+The wind speeds for the NE, NW,and SE regions seem to follow a unimodal distribution with the wind speeds being distributed primarily around 1.5, 3, and 1.5 m/s respectively. The SW region has a bimodal wind speed distribution with the wind speed primarily being distributed around 2 m's and secondarily around 3.75 m/s.
+
+
+# 4: Use geom_jitter with stat_smooth to examine the association between dew point and wind speed by region
+```{r}
+
+met_filtered %>%
+  select(mean_dew_point, mean_wind_sp, region) %>%
+  tidyr::drop_na() %>%
+  
+  ggplot(aes(x = mean_dew_point, y = mean_wind_sp, color = region)) +
+  geom_jitter(alpha = 0.25) +
+  geom_smooth(aes(linetype = region), method = "lm") +
+  facet_wrap( ~ region, ncol = 2, scales = "free") +
+  labs(x = "Dew Point (°C)",
+       y = "Wind Speed (m/s)",
+       title = "Correlation between Dew Point and Wind Speed")
+
+```
+
+Among the four regions, only the SE region has a significant correlation. All correlations are positive, but weak.
+
+# 5: Use geom_bar to create barplots of the weather stations by elevation category colored by region
+```{r}
+
+met_filtered %>%
+  select(USAFID, elevation_category, region) %>%
+  tidyr::drop_na() %>%
+  group_by(elevation_category, region) %>%
+  summarise(n = n_distinct(USAFID), .groups = "drop") %>%
+  
+  ggplot(aes(x = elevation_category, y = n,  fill = region)) +
+  scale_fill_brewer(palette = "Set3") +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Elevation Categhory (Elevations ≥ 252 m are 'high'; elevations < 252 m are 'low')",
+       y = "Number of Stations",
+       fill = "Region",
+       title = "Counts of Stations at High and Low Elevations by Region")
+
+```
+# 6: Use stat_summary to examine mean dew point and wind speed by region with standard deviation error bars
+```{r}
+
+met_filtered %>%
+  select(mean_dew_point, mean_wind_sp, region) %>%
+  tidyr::pivot_longer(cols = c(mean_dew_point, mean_wind_sp), names_to = "var", values_to = "val") %>%
+  tidyr::drop_na() %>%
+  
+  ggplot(aes(x = region, y = val, fill = region)) +
+  stat_summary(fun = mean, geom = "bar", color = "black") +
+  stat_summary(fun.data = "mean_sdl", fun.args = list(mult = 1), mapping = aes(group = region), geom = "errorbar", width = 0.2) +
+  stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 1)), vjust = -0.5, color = "black", size = 3.5, position = position_nudge(x = 0.3)) +
+  facet_wrap(~ var, scales = "free_y",
+             labeller = labeller(
+               var = c(
+                 mean_dew_point = "Dew Point (°C)",
+                 mean_wind_sp   = "Wind Speed (m/s)"
+               ))) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(
+    x = "Region",
+    y = "Value",
+    title = "Mean Dew Point and Wind Speed by Region (±1 SD)"
+  )
+
+met_filtered %>%
+  tidyr::drop_na() %>%
+  group_by(region) %>%
+  summarise(mean_mean_dew_point = mean(mean_dew_point),
+            sd_mean_dew_point = sd(mean_dew_point),
+            mean_mean_windsp = mean(mean_wind_sp),
+            sd_mean_windsp = sd(mean_wind_sp)
+            )
+
+```
+For dew point, the NW region has the most variation (± 5.5 °C). For wind speed, the NE, SE, and SW regions seem to have about the same amount of variation (± ~0.95 m/s). The mean dew points by region for NE, NW, SE, and SW are 15. 98, 13.31, 21.10. and 13.90 °C respectively. The mean wind speeds by region for NE, NW, SE, and SW are 1.72, 2.73, 1.76, and 2.99 m/s respectively.
+
+# 7: Make a map showing the spatial trend in relative humidity in the US
+```{r}
+
+colors <- colorFactor(
+  palette = c("dodgerblue", "firebrick", "green", "magenta"),
+  domain  = factor(met_filtered$region, levels = sort(unique(met_filtered$region)))
+)
+
+
+met_filtered %>%
+  arrange(desc(mean_rh)) %>%
+  head(10) %>%
+  leaflet() %>%
+  addProviderTiles('OpenStreetMap') %>% 
+  addCircles(lat =~ mean_lat, lng =~ mean_lon, opacity = 1, fillOpacity = 1, radius = 500, color = ~colors(factor(region))) %>%
+  addMarkers(~mean_lon, ~mean_lat, popup = ~as.character(mean_rh), label = ~as.character(mean_rh)) %>%
+  addLegend(
+    "bottomright",
+    pal = colors,
+    values = ~factor(region),
+    title = "Region"
+  )
+
+```
+
+# 8: Use a ggplot extension (Using ggpubr to add r and p values to plot 4)
+```{r}
+
+met_filtered %>%
+  select(mean_dew_point, mean_wind_sp, region) %>%
+  tidyr::drop_na() %>%
+  
+  ggplot(aes(x = mean_dew_point, y = mean_wind_sp, color = region)) +
+  geom_jitter(alpha = 0.25) +
+  geom_smooth(aes(linetype = region), method = "lm") +
+  ggpubr::stat_cor(
+    aes(x = mean_dew_point, y = mean_wind_sp),
+    method = "pearson",
+    label.x.npc = "left",
+    label.y.npc = "top",
+    parse = FALSE,
+    label.sep = "\n",
+    size = 4,
+    color = "black",
+    inherit.aes = FALSE
+  ) +
+  facet_wrap( ~ region, ncol = 2, scales = "free") +
+  labs(x = "Dew Point (°C)",
+       y = "Wind Speed (m/s)",
+       title = "Correlation between Dew Point and Wind Speed")
+
+```
+
