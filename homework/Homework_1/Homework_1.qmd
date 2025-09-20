@@ -1,0 +1,298 @@
+---
+title: "Homework_1_OLEA"
+author: "Julian Olea"
+format: 
+  html:
+    embed-resources: true
+fig-width: 8
+fig-height: 6
+warning: FALSE
+---
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(leaflet)
+
+```
+
+# 1
+First we'll read in the data.
+
+```{r Read the data}
+
+setwd("~/Masters/PM_566/homework/Homework_1")
+
+data_2002 <- read.csv("ad_viz_plotval_data_2002.csv")
+data_2022 <- read.csv("ad_viz_plotval_data_2022.csv")
+
+```
+
+Next, we'll examine the dimensions, headers, footers, variables, and variable types of each dataset. We'll also look at the PM2.5 distribution for both datasets.
+
+```{r}
+
+for (df_name in c("data_2002", "data_2022")) {
+  df <- get(df_name)
+  
+  # dimensions
+  cat(paste0("\nFor ", df_name, " the dimensions of the dataframe are as follows (in [rows, columns] format):\n"))
+  print(dim(df))
+  
+  # first two rows
+  cat(paste0("\nFor ", df_name, " these are the first two rows:\n"))
+  print(head(df, 2))
+  
+  # last two rows
+  cat(paste0("\nFor ", df_name, " these are the last two rows:\n"))
+  print(tail(df, 2))
+  
+  cat(paste0("\nFor ", df_name, " this is the data structure:\n"))
+  print(str(df))
+  
+}
+
+data_2002 %>%
+  ggplot(aes(x = Daily.Mean.PM2.5.Concentration)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white", alpha = 0.7) +
+  labs(
+    title = "Distribution of Daily Mean PM2.5 Concentration (2002)",
+    x = "Daily Mean PM2.5 Concentration",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+data_2022 %>%
+  ggplot(aes(x = Daily.Mean.PM2.5.Concentration)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white", alpha = 0.7) +
+  labs(
+    title = "Distribution of Daily Mean PM2.5 Concentration (2022)",
+    x = "Daily Mean PM2.5 Concentration",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+For both 2002 and 2022, the bulk of PM2.5 values seem to be distributed below 50, however for 2022 we seem to have a small number of PM2.5 values above 300. We will need to examine these later.
+
+# 2 Merge the datasets and generate a year only column
+(I will also add a month column for a later plot I will make)
+
+```{r}
+
+bind_rows(data_2002, data_2022) %>%
+  mutate(
+    pm = Daily.Mean.PM2.5.Concentration,
+    date_yearonly = as.numeric(format(as.Date(Date, format = "%m/%d/%Y"), "%Y")),
+    date_monthonly = format(as.Date(Date, format = "%m/%d/%Y"), "%m")
+  ) %>%
+  relocate(c(date_yearonly, date_monthonly), .after = Date) -> data_merged
+
+```
+
+# 3 Make a map
+
+```{r}
+
+colors <- colorFactor(
+  palette = c("dodgerblue", "firebrick"),
+  domain  = factor(data_merged$date_yearonly, levels = sort(unique(data_merged$date_yearonly)))
+)
+
+
+leaflet(data = data_merged) %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addCircleMarkers(
+    lng = ~Site.Longitude, lat = ~Site.Latitude,
+    radius = 5, stroke = FALSE, fillOpacity = 0.9,
+    color = ~colors(factor(date_yearonly))
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colors,
+    values = ~factor(date_yearonly),
+    title = "Dataset Year"
+  )
+
+```
+
+# 4 Check for implausible PM2.5 values
+
+Let's check some of the high pm values to see if they are valid.
+
+```{r}
+
+data_merged %>%
+  filter(!pm < 0) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y")) %>% 
+  
+  ggplot(aes(x = Date, y = pm)) +
+  geom_line() +
+  geom_hline(yintercept = 100, color = "red", linetype = "dashed") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  facet_wrap(~date_yearonly, ncol = 1, scales = "free_x")
+
+```
+In 2022, there seems to be 3 noticeable spikes in PM2.5 during the late summer/early-fall. Let's look up the PM2.5 values for the associated counties with these PM 2.5 spikes 
+
+```{r}
+
+data_merged %>%
+  filter(pm > 100) %>%
+  arrange(Date) %>%
+  select(Date, pm, State, County, AQS.Parameter.Description, Method.Description)
+
+```
+
+After looking up these dates, the higher pm 2.5 values seem to match up with periods of local wildfires (found here: https://www.fire.ca.gov/incidents/2022). While they are higher than typical values, they contextually make sense.
+
+```{r}
+
+wildfires <- data.frame(
+  label = c(
+    "Lost Lake Fire (Riverside)",
+    "McKinney Fire (Siskiyou)",
+    "Six Rivers Ltg Complex (Humboldt/Trinity)",
+    "Mountain Fire (Siskiyou)",
+    "Mosquito Fire (El Dorado/Placer)"
+  ),
+  start = as.Date(c("2022-05-26", "2022-07-29", "2022-08-05", "2022-09-02", "2022-09-06")),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    start_factor = factor(format(start, "%m"),
+                       levels = sprintf("%02d", 1:12),
+                       labels = month.abb),
+    start_num = as.integer(start_factor))
+
+data_merged %>%
+  filter(!pm < 0 
+         & date_yearonly %in% c("2022")) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y")) %>% 
+  
+  ggplot(aes(x = Date, y = pm)) +
+  geom_line() +
+  geom_hline(yintercept = 100, color = "red", linetype = "solid") +
+  geom_vline(data = wildfires,
+             aes(xintercept = start),
+             color = "firebrick",
+             linetype = "dashed"
+  ) +
+  geom_text(
+    data = wildfires,
+    aes(x = start, y = Inf, label = label),
+    angle = 90, vjust = -0.5, hjust = 1.0,
+    inherit.aes = FALSE, size = 3
+) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b", limits = as.Date(c("2022-05-01", "2022-10-01")))
+
+```
+
+Now that we've cropped in to the the months of May through October for 2022, we can annotate the x-axis with vertical lines for the dates when wildfires were reported to have started. We can see that the extreme high values of PM2.5 line up with the dates where wildfires started.
+
+Let's now look for PM2.5 values that should be implausible based on being negative or being NA.
+
+```{r}
+
+data_merged %>%
+  group_by(date_yearonly) %>%
+  summarise(max = max(pm),
+            min = min(pm),
+            mean = mean(pm),
+            median = median(pm),
+            neg_values = sum(pm < 0),
+            neg_values_percent = neg_values / n() * 100,
+            na_count = sum(is.na(pm)),
+            na_count_percent = sum(is.na(pm)) / n() * 100
+  )
+
+```
+
+Neither dataset has any NA values reported for PM2.5. For 2002, all the PM2.5 values seem to be plausible: the highest value is 104.3 and the lowest is 0.0. For 2022, we can see that the highest reported value is 302.5 (which we've identified as corresponding with a wildfire) and the lowest reported value is -6.7. Negative PM2.5 values aren't valid PM2.5 values. The 2022 dataset has 215 negative PM2.5 values, which makes up .36% of the 2022 dataset.
+
+# 5 PM2.5 in 2002 vs 2022
+
+```{r}
+
+data_merged %>%
+  tidyr::drop_na() %>%
+  filter(!pm < 0) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+         date_monthonly = factor(format(Date, "%m"),
+                            levels = sprintf("%02d", 1:12),
+                            labels = month.abb)) %>% 
+  
+  ggplot(aes(x = date_monthonly, y = pm, group = date_yearonly, color = factor(date_yearonly))) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 2) +
+   geom_vline(data = wildfires,
+             aes(xintercept = start_num),
+             color = "dodgerblue",
+             linetype = "dashed"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Month",
+       y = "PM2.5",
+       color = "Year",
+       title = "PM2.5 Over Time for 2002 and 2022: All California Sites Grouped",
+       subtitle = "Wildfire months in 2022 shown with dashed blue lines")
+
+```
+
+After grouping all California sites together and determining the mean PM2.5 for each month, we can see that 2022 has a much lower PM2.5 trendline than 2002 - even with the PM2.5 values associated with the wildfires included in these calculations.
+
+```{r}
+
+data_merged %>%
+  tidyr::drop_na() %>%
+  filter(!pm < 0) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+         date_monthonly = factor(format(Date, "%m"),
+                            levels = sprintf("%02d", 1:12),
+                            labels = month.abb)) %>% 
+  
+  ggplot(aes(x = date_monthonly, y = pm, group = date_yearonly, color = factor(date_yearonly))) +
+  stat_summary(fun = mean, geom = "line", linewidth = 0.1) +
+  stat_summary(fun = mean, geom = "point", size = 0.2) +
+  facet_wrap(~County) +
+  scale_x_discrete(breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
+  theme(text = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+   labs(x = "Month",
+       y = "PM2.5",
+       color = "Year")
+
+```
+
+Looking at the PM2.5 values in 2002 vs 2022 for all the California counties at a glance, we can consistently see that the blue line is below the the red line, except in Mariposa, Nevada, Placer, Siskiyou, and Trinity - which are counties that have associated wildfires where the spikes are.
+
+```{r}
+
+data_merged %>%
+  tidyr::drop_na() %>%
+  filter(!pm < 0 
+         & County %in% c("Los Angeles")
+         & !Local.Site.Name %in% c("")) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+         date_monthonly = factor(format(Date, "%m"),
+                            levels = sprintf("%02d", 1:12),
+                            labels = month.abb)) %>% 
+  
+  ggplot(aes(x = date_monthonly, y = pm, group = date_yearonly, color = factor(date_yearonly))) +
+  stat_summary(fun = mean, geom = "line", linewidth = 0.1) +
+  stat_summary(fun = mean, geom = "point", size = 0.2) +
+  facet_wrap(~Local.Site.Name) +
+  scale_x_discrete(breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
+  theme(text = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+   labs(x = "Month",
+       y = "PM2.5",
+       color = "Year")
+
+```
+
+When filtering for sites in LA county only (and excluding sites with no name), we can see that there are numerous sites where there are only readings for one year and not the other. For the sites that have readings for both years, we can see that the PM2.5 readings from 2022 trend lower than those of 2002. 

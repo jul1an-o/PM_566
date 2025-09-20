@@ -1,0 +1,247 @@
+```{r}
+
+library(knitr)
+
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.width = 14,
+  fig.height = 7,
+  out.width = "100%",
+  dpi = 200,
+  dev = "pdf"
+)
+```
+
+```{r 082925}
+
+billboard <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-08-26/billboard.csv')
+topics <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-08-26/topics.csv')
+
+library(pheatmap)
+library(dplyr)
+library(viridis)
+library(gplots)
+library(ggplot2)
+
+billboard[,c("date","bpm", "energy", "danceability", "happiness", "loudness_d_b")] %>%
+  tidyr::drop_na() %>%
+  mutate(date_yearonly = as.numeric(format(as.Date(date, format="%Y/%m/%d"),"%Y")),
+         decade_num = floor(date_yearonly / 10) * 10,
+         decade = paste0(decade_num, "s")) %>%
+  select(-c("date", "date_yearonly")) %>%
+  tidyr::pivot_longer(cols = -"decade",
+                      names_to = "valence_measure",
+                      values_to = "value"
+  ) %>%
+  group_by(decade, valence_measure) %>%
+  summarise(
+    mean   = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  select(decade, valence_measure, mean) %>%
+  tidyr::pivot_wider(names_from = valence_measure, values_from = mean) %>%
+  tibble::column_to_rownames("decade") %>%
+  as.matrix() %>%
+  
+  heatmap.2(scale = "column",
+            Rowv = FALSE, Colv = FALSE,
+            dendrogram = "none",
+            col = colorRampPalette(c("blue", "white", "red")),
+            xlab = "Valence measure",
+            ylab = "Decade",
+            main = "Average Valence Measures by Decade",
+            margins = c(10, 10),
+            density.info = "none",
+            trace = "none",
+            cexRow = 1.2,
+            cexCol = 1.2,
+            keysize = 1.5
+  )
+
+
+# 
+#   pheatmap(scale = "column",    
+#             cluster_rows = FALSE, cluster_cols = FALSE)
+
+
+
+```
+
+```{r 090525}
+
+library(dplyr)
+library(viridis)
+library(gplots)
+library(ggplot2)
+
+frogID_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-02/frogID_data.csv')
+frog_names <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-02/frog_names.csv')
+
+str(frog_names)
+
+str(frogID_data)
+
+
+unique(frogID_data$stateProvince)
+
+frogID_data %>%
+  mutate(year = lubridate::year(as.Date(eventDate, "%Y/%m/%d"))) %>%
+  distinct(year)
+
+frogID_data %>%
+  left_join(distinct(frog_names, scientificName, .keep_all = TRUE), by = "scientificName") %>%
+  # group_by(commonName) %>%
+  count(commonName) %>%
+  tidyr::drop_na() %>%
+  slice_max(order_by = n, n = 10, with_ties = FALSE) %>%
+  pull(commonName) -> top10frogs
+
+frogID_data %>%
+  left_join(distinct(frog_names, scientificName, .keep_all = TRUE), by = "scientificName") %>%
+  filter(commonName %in% top10frogs) %>%
+  mutate(month = lubridate::month(as.Date(eventDate, "%Y/%m/%d"), label = TRUE, abbr = FALSE)) %>%
+  group_by(month, commonName, stateProvince) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  
+  ggplot(aes(x = month, y = count, fill = commonName)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_wrap(~stateProvince) +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Top 10 Frogs - Change in Provincial Composition by Month for 2023",
+       x = "Month",
+       y = "Percent",
+       fill = "Common Name") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+```
+
+```{r}
+# Close but not topo
+frogID_data %>%
+  semi_join(
+    frogID_data %>%
+      count(scientificName, sort = TRUE) %>%
+      slice_max(order_by = n, n = 8),
+    by = "scientificName"
+  ) %>%
+  
+  ggplot(aes(x = decimalLongitude, y = decimalLatitude, color = scientificName)) +
+  geom_sf(data = rnaturalearth::ne_states(country = "australia", returnclass = "sf"),
+          inherit.aes = FALSE, fill = "antiquewhite") +
+  geom_point(alpha = 0.7, size = 0.5) +
+  coord_sf(xlim = c(135, 155), ylim = c(-43, -15)) +
+  labs(title = "Distribution of Top 8 Frog Species",
+       x = "Longitude", y = "Latitude", color = "Frog Species") +
+  theme_minimal()
+
+# This works
+ggmap::ggmap(
+  ggmap::get_stadiamap(
+    bbox = c(left = 135, bottom = -43, right = 155, top = -15),
+    maptype = "stamen_terrain", zoom = 5, filetype = "png"
+    )
+  ) +
+  geom_point(
+    data = frogID_data %>%
+      transmute(lon = as.numeric(decimalLongitude),
+                lat = as.numeric(decimalLatitude),
+                scientificName) %>%
+      filter(dplyr::between(lon, 135, 155),
+             dplyr::between(lat, -43, -15)) %>%
+      semi_join(count(., scientificName, sort = TRUE) %>%
+                  slice_max(order_by = n, n = 8),
+                by = "scientificName"),
+    aes(lon, lat, color = scientificName),
+    size = 0.5, alpha = 0.6
+  ) +
+  labs(title = "Distribution of Top 8 Frog Species",
+       x = "Longitude", y = "Latitude", color = "Frog Species") +
+  theme_minimal(base_size = 12)
+
+
+```
+
+```{r 091225}
+
+country_lists <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-09/country_lists.csv')
+rank_by_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-09/rank_by_year.csv')
+
+rank_by_year %>%
+  # filter(region %in% c("ASIA")) %>%
+  group_by(year, region) %>%
+  summarise(rank = mean(rank)) %>%
+  # select(year, rank, country) %>%
+  ggplot(aes(x = year, y = rank, color = region)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  theme_minimal()
+
+
+rank_by_year %>%
+  group_by(year, region) %>%
+  summarise(rank = mean(rank), .groups = "drop") %>%
+  group_by(region) %>%
+  summarise(diff = last(rank[order(year)]) - first(rank[order(year)]))
+  
+
+rank_by_year %>%
+  group_by(country) %>%
+  summarise(diff = first(rank[order(year)]) - last(rank[order(year)])) %>%
+  arrange(diff)
+
+rank_by_year %>%
+  filter(country %in% c("Bolivia", "Bangladesh", "Nigeria",
+                        "Ukraine", "Albania", "United Arab Emirates")) %>%
+  
+  mutate(direction = case_when(
+    country %in% c("Ukraine", "Albania", "United Arab Emirates") ~ "Falling Rank Score",
+    country %in% c("Bolivia", "Bangladesh", "Nigeria") ~ "Increasing Rank Score")
+    ) %>%
+  
+  ggplot(aes(x = year, y = rank, color = country)) +
+  geom_line(aes(linetype = direction)) +
+  theme_minimal() +
+  labs(x = "Year",
+       y = "Rank",
+       title = "Top 3 Best and Worst Countries based on Passport Rank ∆ (first reported rank - last reported rank)",
+       color = "Country",
+       linetype = "Direction of Change")
+
+```
+
+```{r 091925}
+# library(gganimate)
+# library(dplyr)
+# library(ggplot2)
+# library(lubridate)
+
+# all_recipes <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-16/all_recipes.csv')
+# cuisines <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-09-16/cuisines.csv')
+
+cuisines %>%
+  tidyr::drop_na() %>%
+  mutate(date_yearonly = as.numeric(format(as.Date(date_published, format="%Y/%m/%d"),"%Y"))) %>%
+  select(date_yearonly) %>%
+  distinct()
+
+
+cuisines %>%
+  tidyr::drop_na() %>%
+  mutate(date_yearonly = as.numeric(format(as.Date(date_published, format="%Y/%m/%d"),"%Y"))) %>%
+  
+  ggplot(aes(x = calories, y = avg_rating)) +
+  geom_jitter() +
+  transition_manual(factor(date_yearonly)) +
+  ease_aes('linear') +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Correlation Between Calories and Average Recipe Rating Over Time",
+    subtitle = "Year: {current_frame}",
+    x = "Calories",
+    y = "Average Rating")
+
+```
+
