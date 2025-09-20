@@ -20,6 +20,7 @@ library(leaflet)
 
 
 # 1: Read the data
+
 ```{r}
 
 if (!file.exists("met_all.gz"))
@@ -34,6 +35,7 @@ met <- data.table::fread("met_all.gz")
 ```
 
 # 2: Prepare the data
+
 ```{r}
 
 data.table::week("2019-08-01 00:00:00")
@@ -126,6 +128,7 @@ The wind speeds for the NE, NW,and SE regions seem to follow a unimodal distribu
 
 
 # 4: Use geom_jitter with stat_smooth to examine the association between dew point and wind speed by region
+
 ```{r}
 
 met_filtered %>%
@@ -142,9 +145,10 @@ met_filtered %>%
 
 ```
 
-Among the four regions, only the SE region has a significant correlation. All correlations are positive, but weak.
+Across all four regions, dew point has a weak but positive correlation with wind speed (i.e. as dew point increases, wind speed also increases).
 
 # 5: Use geom_bar to create barplots of the weather stations by elevation category colored by region
+
 ```{r}
 
 met_filtered %>%
@@ -156,12 +160,17 @@ met_filtered %>%
   ggplot(aes(x = elevation_category, y = n,  fill = region)) +
   scale_fill_brewer(palette = "Set3") +
   geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = n),
+            position = position_dodge(width = 0.9), 
+            vjust = -0.3, size = 3) +
   labs(x = "Elevation Categhory (Elevations ≥ 252 m are 'high'; elevations < 252 m are 'low')",
        y = "Number of Stations",
        fill = "Region",
        title = "Counts of Stations at High and Low Elevations by Region")
 
 ```
+Among the high elevation stations, the NE has the most stations with 262 stations. For the low elevation stations, the SE region has the most at 502 stations. For both elevation categories, the NW has the least stations.
+
 # 6: Use stat_summary to examine mean dew point and wind speed by region with standard deviation error bars
 ```{r}
 
@@ -190,13 +199,12 @@ met_filtered %>%
 met_filtered %>%
   tidyr::drop_na() %>%
   group_by(region) %>%
-  summarise(mean_mean_dew_point = mean(mean_dew_point),
-            sd_mean_dew_point = sd(mean_dew_point),
-            mean_mean_windsp = mean(mean_wind_sp),
+  summarise(sd_mean_dew_point = sd(mean_dew_point),
             sd_mean_windsp = sd(mean_wind_sp)
             )
 
 ```
+
 For dew point, the NW region has the most variation (± 5.5 °C). For wind speed, the NE, SE, and SW regions seem to have about the same amount of variation (± ~0.95 m/s). The mean dew points by region for NE, NW, SE, and SW are 15. 98, 13.31, 21.10. and 13.90 °C respectively. The mean wind speeds by region for NE, NW, SE, and SW are 1.72, 2.73, 1.76, and 2.99 m/s respectively.
 
 # 7: Make a map showing the spatial trend in relative humidity in the US
@@ -227,8 +235,10 @@ met_filtered %>%
   )
 
 ```
+The stations with higher relative humidity tend to fall in the coastal or in the northern midwest states. The NW region has 5 of the 10 most humid sites. This is consistent with known weather patterns that characterize the PNW as a generally humid area that receives a lot of rain / snow during the winter months.
 
 # 8: Use a ggplot extension (Using ggpubr to add r and p values to plot 4)
+
 ```{r}
 
 met_filtered %>%
@@ -255,4 +265,4 @@ met_filtered %>%
        title = "Correlation between Dew Point and Wind Speed")
 
 ```
-
+Now that we have p values, we can see that only the SE has a significant, weak positive correlation. All the other regions have p values > 0.05, suggesting that these weak positive correlations are not that robust.
