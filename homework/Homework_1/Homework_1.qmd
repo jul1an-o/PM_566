@@ -17,7 +17,7 @@ library(leaflet)
 
 ```
 
-# 1
+# 1: Exploratory data analysis
 First we'll read in the data.
 
 ```{r Read the data}
@@ -58,7 +58,7 @@ data_2002 %>%
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white", alpha = 0.7) +
   labs(
     title = "Distribution of Daily Mean PM2.5 Concentration (2002)",
-    x = "Daily Mean PM2.5 Concentration",
+    x = "PM2.5 (µg/m³)",
     y = "Count"
   ) +
   theme_minimal()
@@ -68,16 +68,18 @@ data_2022 %>%
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white", alpha = 0.7) +
   labs(
     title = "Distribution of Daily Mean PM2.5 Concentration (2022)",
-    x = "Daily Mean PM2.5 Concentration",
+    x = "PM2.5 (µg/m³)",
     y = "Count"
   ) +
   theme_minimal()
 
 ```
 
+The 2002 dataset has 22 variables and 15976 observations. The 2022 dataset has the same number of variables and 59918 observations.
+
 For both 2002 and 2022, the bulk of PM2.5 values seem to be distributed below 50, however for 2022 we seem to have a small number of PM2.5 values above 300. We will need to examine these later.
 
-# 2 Merge the datasets and generate a year only column
+# 2: Merge the datasets, rename key columns, and generate a year only column
 (I will also add a month column for a later plot I will make)
 
 ```{r}
@@ -85,6 +87,10 @@ For both 2002 and 2022, the bulk of PM2.5 values seem to be distributed below 50
 bind_rows(data_2002, data_2022) %>%
   mutate(
     pm = Daily.Mean.PM2.5.Concentration,
+    AQS_param = AQS.Parameter.Description,
+    AQS_method = Method.Description,
+    site_name = Local.Site.Name,
+    
     date_yearonly = as.numeric(format(as.Date(Date, format = "%m/%d/%Y"), "%Y")),
     date_monthonly = format(as.Date(Date, format = "%m/%d/%Y"), "%m")
   ) %>%
@@ -92,7 +98,7 @@ bind_rows(data_2002, data_2022) %>%
 
 ```
 
-# 3 Make a map
+# 3: Make a map
 
 ```{r}
 
@@ -101,8 +107,25 @@ colors <- colorFactor(
   domain  = factor(data_merged$date_yearonly, levels = sort(unique(data_merged$date_yearonly)))
 )
 
+data_merged %>%
+  filter(date_yearonly %in% 2002) %>%
+  leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addCircleMarkers(
+    lng = ~Site.Longitude, lat = ~Site.Latitude,
+    radius = 5, stroke = FALSE, fillOpacity = 0.9,
+    color = ~colors(factor(date_yearonly))
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colors,
+    values = ~factor(date_yearonly),
+    title = "Dataset Year"
+  )
 
-leaflet(data = data_merged) %>%
+data_merged %>%
+  filter(date_yearonly %in% 2022) %>%
+  leaflet() %>%
   addProviderTiles(providers$OpenStreetMap) %>%
   addCircleMarkers(
     lng = ~Site.Longitude, lat = ~Site.Latitude,
@@ -118,7 +141,9 @@ leaflet(data = data_merged) %>%
 
 ```
 
-# 4 Check for implausible PM2.5 values
+When comparing the two maps, the 2022 map has more sites - indicating a statewide advancement in air quality monitoring and tracking. 
+
+# 4: Check for implausible PM2.5 values
 
 Let's check some of the high pm values to see if they are valid.
 
@@ -132,9 +157,13 @@ data_merged %>%
   geom_line() +
   geom_hline(yintercept = 100, color = "red", linetype = "dashed") +
   scale_x_date(date_breaks = "1 month", date_labels = "%b") +
-  facet_wrap(~date_yearonly, ncol = 1, scales = "free_x")
+  facet_wrap(~date_yearonly, ncol = 1, scales = "free_x") +
+  labs(x = "Month",
+       y = "PM2.5 (µg/m³)",
+       title = "Daily Mean PM2.5 Concentration for 2002 vs. 2022")
 
 ```
+
 In 2022, there seems to be 3 noticeable spikes in PM2.5 during the late summer/early-fall. Let's look up the PM2.5 values for the associated counties with these PM 2.5 spikes 
 
 ```{r}
@@ -142,7 +171,7 @@ In 2022, there seems to be 3 noticeable spikes in PM2.5 during the late summer/e
 data_merged %>%
   filter(pm > 100) %>%
   arrange(Date) %>%
-  select(Date, pm, State, County, AQS.Parameter.Description, Method.Description)
+  select(Date, pm, State, County, AQS_param, AQS_method)
 
 ```
 
@@ -186,7 +215,10 @@ data_merged %>%
     angle = 90, vjust = -0.5, hjust = 1.0,
     inherit.aes = FALSE, size = 3
 ) +
-  scale_x_date(date_breaks = "1 month", date_labels = "%b", limits = as.Date(c("2022-05-01", "2022-10-01")))
+  scale_x_date(date_breaks = "1 month", date_labels = "%b", limits = as.Date(c("2022-05-01", "2022-10-01"))) +
+  labs(x = "Month",
+       y = "PM2.5 (µg/m³)",
+       title = "Daily Mean PM2.5 Concentration for 2022 with Wildfires Annotated")
 
 ```
 
@@ -212,8 +244,8 @@ data_merged %>%
 
 Neither dataset has any NA values reported for PM2.5. For 2002, all the PM2.5 values seem to be plausible: the highest value is 104.3 and the lowest is 0.0. For 2022, we can see that the highest reported value is 302.5 (which we've identified as corresponding with a wildfire) and the lowest reported value is -6.7. Negative PM2.5 values aren't valid PM2.5 values. The 2022 dataset has 215 negative PM2.5 values, which makes up .36% of the 2022 dataset.
 
-# 5 PM2.5 in 2002 vs 2022
-
+# 5: PM2.5 in 2002 vs 2022
+## Level 1: State
 ```{r}
 
 data_merged %>%
@@ -234,7 +266,7 @@ data_merged %>%
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Month",
-       y = "PM2.5",
+       y = "PM2.5 (µg/m³)",
        color = "Year",
        title = "PM2.5 Over Time for 2002 and 2022: All California Sites Grouped",
        subtitle = "Wildfire months in 2022 shown with dashed blue lines")
@@ -243,56 +275,129 @@ data_merged %>%
 
 After grouping all California sites together and determining the mean PM2.5 for each month, we can see that 2022 has a much lower PM2.5 trendline than 2002 - even with the PM2.5 values associated with the wildfires included in these calculations.
 
-```{r}
+## Level 2: County
+```{r fig.width = 15, fig.height = 15, dpi = 250}
 
+# Faceted Line Plot
 data_merged %>%
   tidyr::drop_na() %>%
   filter(!pm < 0) %>%
   mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
          date_monthonly = factor(format(Date, "%m"),
                             levels = sprintf("%02d", 1:12),
-                            labels = month.abb)) %>% 
+                            labels = month.abb)) %>%
   
   ggplot(aes(x = date_monthonly, y = pm, group = date_yearonly, color = factor(date_yearonly))) +
-  stat_summary(fun = mean, geom = "line", linewidth = 0.1) +
-  stat_summary(fun = mean, geom = "point", size = 0.2) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 2) +
   facet_wrap(~County) +
   scale_x_discrete(breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
-  theme(text = element_text(size = 8),
+  theme(text = element_text(size = 14),
         axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom") +
    labs(x = "Month",
-       y = "PM2.5",
-       color = "Year")
+       y = "PM2.5 (µg/m³)",
+       color = "Year",
+       title = "PM2.5 Over Time for 2022 and 2022: County-Level")
+
+# Dot plot (Comparing Each Year's Average)
+data_merged %>%
+  tidyr::drop_na(pm, County, date_yearonly) %>%
+  filter(pm >= 0) %>%
+  group_by(County, date_yearonly) %>%
+  summarise(mean_pm = mean(pm, na.rm = TRUE), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = date_yearonly, values_from = mean_pm) %>%
+  mutate(pm_delta = `2022` - `2002`) %>%
+  tidyr::pivot_longer(cols = c(`2002`, `2022`),
+                      names_to = "date_yearonly",
+                      values_to = "mean_pm") %>%
+  mutate(direction = case_when(
+    pm_delta < 0 ~ "Improvement",
+    pm_delta > 0 ~ "Reduction"
+  ),
+  pm_delta = case_when(
+    is.na(pm_delta) ~ 9999,
+    TRUE ~ pm_delta)) %>%
+  
+  ggplot(aes(x = mean_pm, y = reorder(County, -pm_delta), color = factor(date_yearonly))) +
+  geom_point(size = 4) +
+  geom_line(aes(group = County, linetype = direction), color = "black") +
+  theme(text = element_text(size = 18),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_linetype_discrete(na.translate = FALSE) + 
+  labs(x = "Mean Annual PM2.5 (µg/m³)",
+       y = "County",
+       color = "Year",
+       linetype = "Direction of Change",
+       title = "Mean Annual PM2.5 for 2002 and 2022: County-Level")
+
 
 ```
 
-Looking at the PM2.5 values in 2002 vs 2022 for all the California counties at a glance, we can consistently see that the blue line is below the the red line, except in Mariposa, Nevada, Placer, Siskiyou, and Trinity - which are counties that have associated wildfires where the spikes are.
+Looking at the PM2.5 values in 2002 vs 2022 for all the California counties at a glance in the faceted plot, we can consistently see that the the 2022's blue line is below 2002's red line (except in cases where counties had wildfires in 2022), indicating a marked improvement in air quality at the state level. When using the dot plot to visualize the delta, we can see that the majority of counties had an improvement in air quality.
 
-```{r}
+## Level 3: City
+```{r fig.width = 15, fig.height = 15, dpi = 250}
 
+# Faceted Line Plot
 data_merged %>%
   tidyr::drop_na() %>%
   filter(!pm < 0 
          & County %in% c("Los Angeles")
-         & !Local.Site.Name %in% c("")) %>%
+         & !site_name %in% c("")) %>%
   mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
          date_monthonly = factor(format(Date, "%m"),
                             levels = sprintf("%02d", 1:12),
                             labels = month.abb)) %>% 
   
   ggplot(aes(x = date_monthonly, y = pm, group = date_yearonly, color = factor(date_yearonly))) +
-  stat_summary(fun = mean, geom = "line", linewidth = 0.1) +
-  stat_summary(fun = mean, geom = "point", size = 0.2) +
-  facet_wrap(~Local.Site.Name) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 2) +
+  facet_wrap(~site_name) +
   scale_x_discrete(breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
-  theme(text = element_text(size = 8),
+  theme(text = element_text(size = 14),
         axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom") +
    labs(x = "Month",
-       y = "PM2.5",
-       color = "Year")
+       y = "PM2.5 (µg/m³)",
+       color = "Year",
+       title = "PM2.5 Over Time for 2022 and 2022: Los Angeles County Sites")
+
+# Dot plot (Comparing Each Year's Average)
+data_merged %>%
+  tidyr::drop_na(pm, County, date_yearonly) %>%
+  filter(!pm < 0 
+         & County %in% c("Los Angeles")
+         & !site_name %in% c("")) %>%
+  group_by(site_name, date_yearonly) %>%
+  summarise(mean_pm = mean(pm, na.rm = TRUE), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = date_yearonly, values_from = mean_pm) %>%
+  mutate(pm_delta = `2022` - `2002`) %>%
+  tidyr::pivot_longer(cols = c(`2002`, `2022`),
+                      names_to = "date_yearonly",
+                      values_to = "mean_pm") %>%
+  mutate(direction = case_when(
+    pm_delta < 0 ~ "Improvement",
+    pm_delta > 0 ~ "Reduction"
+  ),
+  pm_delta = case_when(
+    is.na(pm_delta) ~ 9999,
+    TRUE ~ pm_delta)) %>%
+  
+  ggplot(aes(x = mean_pm, y = reorder(site_name, -pm_delta), color = factor(date_yearonly))) +
+  geom_point(size = 4) +
+  geom_line(aes(group = site_name, linetype = direction), color = "black") +
+  theme(text = element_text(size = 18),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_linetype_discrete(na.translate = FALSE) + 
+  labs(x = "Mean Annual PM2.5 (µg/m³)",
+       y = "Los Angeles County Site",
+       color = "Year",
+       linetype = "Direction of Change",
+       title = "Mean Annual PM2.5 for 2002 and 2022: Los Angeles County Sites")
 
 ```
 
-When filtering for sites in LA county only (and excluding sites with no name), we can see that there are numerous sites where there are only readings for one year and not the other. For the sites that have readings for both years, we can see that the PM2.5 readings from 2022 trend lower than those of 2002. 
+Looking at the PM2.5 values in 2002 vs 2022 for only the Los Angeles county sites in the faceted plot, we can see that for sites with readings for both 2002 and 2022, there was an improvement over time in PM2.5 readings. Looking at the dot plots shows that there was only improvement in Los Angeles county. Furthermore, we see a number of new sites that were not present in 2002, reflecting Los Angeles's rapid advancement in air quality monitoring standards.
