@@ -245,3 +245,10 @@ cuisines %>%
 
 ```
 
+```{r 092625}
+
+fide_ratings_august <- tuesdata$fide_ratings_august
+fide_ratings_september <- tuesdata$fide_ratings_september
+
+```
+

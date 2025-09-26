@@ -1,6 +1,213 @@
 ---
-title: "Lab_05"
-format: html
+title: "Lab_5_OLEA"
+author: "Julian Olea"
+format: 
+  html:
+    embed-resources: true
+    df-print: tibble
+fig-width: 8
+fig-height: 6
+warning: FALSE
 ---
 
-test2
+```{r}
+
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(leaflet)
+
+```
+
+### Read the data:
+```{r}
+
+if (!file.exists("met_all.gz"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    destfile = "met_all.gz",
+    method   = "libcurl",
+    timeout  = 60
+  )
+met <- data.table::fread("met_all.gz")
+
+stations <- read.csv("https://noaa-isd-pds.s3.amazonaws.com/isd-history.csv")
+
+```
+
+```{r}
+
+met %>%
+  filter(temp > -17
+         & elev != 9999.0) %>%
+  tidyr::drop_na(USAFID) -> met
+
+met %>%
+  group_by(USAFID) %>%
+  summarise(temp = mean(temp, na.rm = TRUE),
+            atm.press = mean(atm.press, na.rm = TRUE),
+            wind.sp = mean(`wind.sp`, na.rm = TRUE),
+            
+            lon = mean(lon, na.rm = TRUE),
+            lat = mean(lat, na.rm = TRUE),
+            
+            .groups = "drop"
+  ) -> met_aggregated
+
+```
+
+### Filter the stations data to only include stations in the US with valid state codes and valid USAF IDs.
+```{r}
+
+stations %>%
+  filter(USAF != 999999,
+         CTRY != "",
+         STATE != "") %>%
+  select(USAF, CTRY, STATE) %>%
+  tidyr::drop_na(USAF) %>%
+  distinct(USAF, .keep_all = TRUE) -> stations_filtered
+
+```
+
+### Combine the two datasets using the site ID as the key for the merging.
+```{r}
+
+NROW(met)
+met %>%
+  mutate(USAFID = as.character(USAFID)) %>%
+  left_join(stations_filtered, by = c("USAFID" = "USAF")) -> met_merged
+NROW(met_merged)
+
+NROW(met_aggregated)
+met_aggregated %>%
+  mutate(USAFID = as.character(USAFID)) %>%
+  left_join(stations_filtered, by = c("USAFID" = "USAF")) -> met_aggregated_merged
+
+NROW(met_aggregated_merged)
+
+```
+
+# Question 1: Representative station for the US
+
+In order to identify the true median's, we will drop the NA values for our columns of interest; leaving these in will artificially skew the medians. In the case that there are an even number of entries. we will pick the station whose absolute difference is closest to the calculated median.
+
+```{r}
+
+met_aggregated_merged %>%
+  filter(CTRY == "US") %>%
+  select(USAFID, STATE, temp, wind.sp, atm.press) %>%
+  tidyr::pivot_longer(cols = c(temp, wind.sp, atm.press),
+                      names_to = "metric",
+                      values_to = "value") %>%
+  group_by(metric) %>%
+  mutate(median_value = median(value, na.rm = TRUE)) %>%
+  slice_min(abs(value - median_value), n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(metric = factor(metric, levels = c("temp", "wind.sp", "atm.press"))) %>%
+  arrange(metric)
+
+cbind(
+  "median temp" = quantile(met_aggregated_merged$temp, 0.5, na.rm = TRUE),
+  "median wind speed" = quantile(met_aggregated_merged$wind.sp, 0.5, na.rm = TRUE),
+  "median atmospheric pressure" = quantile(met_aggregated_merged$atm.press, 0.5, na.rm = TRUE)
+)
+
+```
+
+We can see that each of these stations is located in a different state. Kentucky has the station with the temperature closest to the median of the temperature values. Marland has the station with the wind speed closest to the median of the wind speed values. Finally, Oklahoma has the station with the atmospheric pressure closest to the median of the atmospheric pressure values.
+
+In summary, the stations closest to the median values for each metric do not coincide with the same station.
+
+# Question 2: Representative station per state
+```{r}
+
+met_aggregated_merged %>%
+  select(USAFID, STATE, lon, lat) %>%
+  group_by(STATE) %>%
+  summarise(
+    mean_lon = mean(lon, na.rm = TRUE),
+    mean_lat = mean(lat, na.rm = TRUE),
+    median_lon = median(lon, na.rm = TRUE),
+    median_lat = median(lat, na.rm = TRUE),
+    .groups = "drop"
+  ) -> state_lon_lat
+
+state_lon_lat
+
+```
+
+# Question 3: In the middle?
+
+Using the by state data created in question 2, we can identify the stations closest to the each state's mean latitude and longitude using a similar absolute difference approach as used in question 1.
+
+```{r}
+
+met_aggregated_merged %>%
+  distinct(USAFID, STATE, lon, lat, .keep_all = FALSE) %>%
+  inner_join(state_lon_lat, by = "STATE") %>%
+  mutate(
+    dist2 = (lon - mean_lon)^2 + (lat - mean_lat)^2
+  ) %>%
+  group_by(STATE) %>%
+  slice_min(dist2, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(USAFID, STATE, lon, lat, median_lon, median_lat) %>%
+  
+  leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addCircleMarkers(lng = ~ lon, lat = ~ lat, color = "blue",  label = ~paste(STATE, "— Closest site")) %>%
+  addCircleMarkers(lng = ~ median_lon, lat = ~ median_lat, color = "red", label = ~paste(STATE, "— Median state location")) %>%
+  addLegend(
+    "bottomright",
+    colors = c("blue", "red"),
+    labels = c("Closest Site", "Site Median"),
+    title = "Site"
+  )
+
+
+```
+
+# Question 4: Means of means
+
+This question is asking for the generation of a new variable on the original dataset by using specific filtering conditions on the aggregated dataset. I'll pipe the original dataset into a left join with a filtered and mutated version of the aggregated dataset which contains the new temperature category we want to group on later to perform the summary statistics.
+
+```{r}
+
+met_merged %>%
+  left_join(
+    met_aggregated_merged %>%
+              tidyr::drop_na(temp) %>%
+              filter(CTRY %in% c("US")) %>%
+              group_by(STATE) %>%
+              summarise(
+                mean_temp = mean(temp),
+                .groups = "drop"
+              ) %>%
+              mutate(temp_cat = case_when(
+                mean_temp < 20 ~ "low",
+                mean_temp >= 20 & mean_temp < 25 ~ "mid",
+                mean_temp >= 25 ~ "high"
+              )),
+            by = "STATE"
+  ) %>%
+  
+  group_by(temp_cat) %>%
+  summarise(
+    n_states = n_distinct(STATE),
+    n_stations = n_distinct(USAFID),
+    n_entries = n(),
+    na_entries = sum(rowSums(is.na(across(where(is.atomic)))) > 0),
+    
+    mean_temp = mean(temp, na.rm = TRUE),
+    mean_wind = mean(wind.sp, na.rm = TRUE),
+    mean_pressure = mean(atm.press, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+n_distinct(met_merged$STATE)
+
+n_distinct(met_merged$USAFID)
+
+```
+
+As a sanity check, we can see that the number of states in each temperature category sums to 48, which is the number of states in the US with weather stations in our dataset. The number of unique stations also sums to 1588, which is the total number of unique stations in the US in our dataset.
