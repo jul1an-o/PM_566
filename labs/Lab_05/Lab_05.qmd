@@ -114,7 +114,7 @@ cbind(
 
 ```
 
-We can see that each of these stations is located in a different state. Kentucky has the station with the temperature closest to the median of the temperature values. Marland has the station with the wind speed closest to the median of the wind speed values. Finally, Oklahoma has the station with the atmospheric pressure closest to the median of the atmospheric pressure values.
+We can see that each of these stations is located in a different state. Kentucky has the station with the temperature closest to the median of the temperature values. Maryland has the station with the wind speed closest to the median of the wind speed values. Finally, Alabama has the station with the atmospheric pressure closest to the median of the atmospheric pressure values.
 
 In summary, the stations closest to the median values for each metric do not coincide with the same station.
 
